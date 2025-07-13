@@ -1,3 +1,7 @@
+jax>=0.6.2
+jaxlib>=0.6.2
+orbax-checkpoint @ git+https://github.com/google/orbax.git@test_782430938#subdirectory=checkpoint
+cloudpickle>=3.0.0
 absl-py
 aqtp
 array-record
@@ -17,11 +21,11 @@ jaxtyping
 jsonlines
 ml-collections
 ml-goodput-measurement
-numpy
+mlperf-logging@git+https://github.com/mlperf/logging.git
+numpy>=2.1.1
 omegaconf
 optax
-orbax-checkpoint
-pathwaysutils
+pathwaysutils>=0.1.1
 pillow
 pre-commit
 protobuf

@@ -48,27 +48,27 @@ class UserConfig:
 
   # gcp configuration
   user: str = "user_name"
-  cluster_name: str = "v6e-256-cluster"
-  project: str = "tpu-prod-env-cluster"
-  zone: str = "us-east5-b"
-  device_type: str = "v6e-256"
+  cluster_name: str = "pw-scale-test-v5e-32"
+  project: str = "cloud-tpu-multipod-dev"
+  zone: str = "us-south1"
+  device_type: str = "v5litepod-32"
   priority: str = "medium"
 
   # Images for env
-  server_image: str = "us-docker.pkg.dev/cloud-tpu-v2-images/pathways/proxy_server"
-  proxy_image: str = "us-docker.pkg.dev/cloud-tpu-v2-images/pathways/server"
-  runner: str = "us-docker.pkg.dev/path/to/maxtext_runner"
-  colocated_python_image: str = None
+  server_image: str = "us-docker.pkg.dev/cloud-tpu-v2-images-dev/pathways/gke/ksadi/unsanitized_server_maxtext:latest"
+  proxy_image: str = "us-docker.pkg.dev/cloud-tpu-v2-images-dev/pathways/gke/ksadi/unsanitized_proxy_server_maxtext:latest"
+  runner: str = "gcr.io/cloud-tpu-multipod-dev/sujinesh_maxtext_latest"
+  colocated_python_image: str = "gcr.io/cloud-tpu-multipod-dev/ksadi_sidecar_maxtext:latest"
   worker_flags: str = ""
   proxy_flags: str = ""
   server_flags: str = ""
 
   # model configuration
-  benchmark_steps: int = 20
-  headless: bool = False
+  benchmark_steps: int = 25
+  headless: bool = True
   selected_model_framework: list[str] = dataclasses.field(default_factory=lambda: ["pathways"])  # pathways, mcjax
-  selected_model_names: list[str] = dataclasses.field(default_factory=lambda: ["llama3_1_8b_8192"])
-  num_slices_list: list[int] = dataclasses.field(default_factory=lambda: [2])
+  selected_model_names: list[str] = dataclasses.field(default_factory=lambda: ["llama3_1_8b_8192_v5e_32"])
+  num_slices_list: list[int] = dataclasses.field(default_factory=lambda: [1])
 
   # other configuration
   xpk_path: str = "~/xpk"
@@ -104,17 +104,20 @@ class UserConfig:
 
 # Define the required configuration here
 USER_CONFIG = UserConfig(
-    user="user_name",
-    cluster_name="v6e-256-cluster",
-    project="tpu-prod-env-cluster",
-    zone="us-east5-b",
-    device_type="v6e-256",
-    benchmark_steps=20,
-    num_slices_list=[2],
-    server_image="us-docker.pkg.dev/cloud-tpu-v2-images/pathways/proxy_server",
-    proxy_image="us-docker.pkg.dev/cloud-tpu-v2-images/pathways/server",
-    runner="us-docker.pkg.dev/path/to/maxtext_runner",
+    user=os.environ.get("USER", "default_user"),
+    cluster_name="pw-scale-test-v5e-32",
+    project="cloud-tpu-multipod-dev",
+    zone="us-south1",
+    device_type="v5litepod-32",
+    benchmark_steps=25,
+    num_slices_list=[1],
+    server_image="us-docker.pkg.dev/cloud-tpu-v2-images-dev/pathways/gke/ksadi/unsanitized_server_maxtext:latest",
+    proxy_image="us-docker.pkg.dev/cloud-tpu-v2-images-dev/pathways/gke/ksadi/unsanitized_proxy_server_maxtext:latest",
+    runner="gcr.io/cloud-tpu-multipod-dev/sujinesh_maxtext_latest",
+    colocated_python_image="gcr.io/cloud-tpu-multipod-dev/ksadi_sidecar_maxtext:latest",
     selected_model_framework=["pathways"],
-    selected_model_names=["llama3_1_8b_8192"],
+    selected_model_names=["llama3_1_8b_8192_v5e_32"],
     priority="medium",
+    headless=True,
 )
+
