@@ -533,36 +533,49 @@ class InferenceWorker:
       self._run_continous_batching(data)
       return self._build_final_outputs(data)
     else:
-      # Pad and batch data for JIT processing
-      batched_tokens = jnp.array([d.tokens for d in data])
-      batched_true_lengths = jnp.array([d.true_length for d in data])
+      if not data:
+        return []
 
-      # Explicitly shard the input data across devices for performance.
-      # This prevents the default behavior of replicating the entire batch to each device.
-      data_sharding = jax.sharding.NamedSharding(
-          self.mesh,
-          P(*self.config.data_sharding)
-      )
-      batched_tokens = jax.device_put(batched_tokens, data_sharding)
-      batched_true_lengths = jax.device_put(batched_true_lengths, data_sharding)
-      
-      # Run the unified, JIT-compiled inference function
-      eos_ids = jnp.array(self.eos_ids)
-      with jax.transfer_guard_host_to_device("disallow_explicit") and jax.transfer_guard_device_to_host("disallow_explicit"):
-        result_tokens, result_logprobs = self._run_inference_jitted_fn(
-            self.config,
-            self.engine,
-            self.params,
-            self.decode_state,
-            batched_tokens,
-            batched_true_lengths,
-            self.rng,
-            eos_ids,
-        )
-      
-      result_tokens = result_tokens.block_until_ready()
-      result_logprobs = result_logprobs.block_until_ready()
-      return self._build_outputs(result_tokens, result_logprobs, data)
+      all_result_tokens = []
+      all_result_logprobs = []
+      num_inputs = len(data)
+      max_slots = self.decode_batch_size
+      for i in range(0, num_inputs, max_slots):
+        chunk_data = data[i : i + max_slots]
+        # Pad and batch data for JIT processing
+        batched_tokens = jnp.array([d.tokens for d in chunk_data])
+        batched_true_lengths = jnp.array([d.true_length for d in chunk_data])
+
+        # Explicitly shard the input data across devices for performance.
+        # This prevents the default behavior of replicating the entire batch to each device.
+        data_sharding = jax.sharding.NamedSharding(self.mesh, P(*self.config.data_sharding))
+        batched_tokens = jax.device_put(batched_tokens, data_sharding)
+        batched_true_lengths = jax.device_put(batched_true_lengths, data_sharding)
+
+        # Run the unified, JIT-compiled inference function
+        eos_ids = jnp.array(self.eos_ids)
+        with jax.transfer_guard_host_to_device("disallow_explicit") and jax.transfer_guard_device_to_host(
+            "disallow_explicit"
+        ):
+          result_tokens, result_logprobs = self._run_inference_jitted_fn(
+              self.config,
+              self.engine,
+              self.params,
+              self.decode_state,
+              batched_tokens,
+              batched_true_lengths,
+              self.rng,
+              eos_ids,
+          )
+
+        result_tokens = result_tokens.block_until_ready()
+        result_logprobs = result_logprobs.block_until_ready()
+        all_result_tokens.append(result_tokens)
+        all_result_logprobs.append(result_logprobs)
+
+      final_result_tokens = jnp.concatenate(all_result_tokens, axis=0)
+      final_result_logprobs = jnp.concatenate(all_result_logprobs, axis=0)
+      return self._build_outputs(final_result_tokens, final_result_logprobs, data)
 
   @staticmethod
   def _run_inference_jitted(config, engine, params, decode_state, batched_tokens, batched_true_lengths, rng, eos_ids, prefill_fn, decode_fn):
