@@ -70,8 +70,19 @@ from MaxText.metric_logger import record_activation_metrics
 # pylint: disable=too-many-positional-arguments
 
 
+from jax.experimental import multihost_utils
+
 def get_first_step(state):
-  return int(state.step)
+  """Get the first step number for training."""
+  # Use a barrier to ensure all hosts are synchronized before the collective call.
+  multihost_utils.sync_global_devices("get_first_step")
+
+  # The result of allgather is a global array. Use jax.device_get to
+  # safely pull the replicated value to the host CPU as a NumPy scalar.
+  replicated_step_value = jax.device_get(
+      multihost_utils.process_allgather(state.step)
+  )
+  return int(replicated_step_value)
 
 
 # -----------------------------------------------------------------------------

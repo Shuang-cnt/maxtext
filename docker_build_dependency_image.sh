@@ -29,7 +29,7 @@
 
 # Enable "exit immediately if any command fails" option
 set -e
-
+BASEIMAGE="us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.7.0-rev1"
 export LOCAL_IMAGE_NAME=maxtext_base_image
 echo "Building to $LOCAL_IMAGE_NAME"
 
