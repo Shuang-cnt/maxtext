@@ -37,12 +37,12 @@ tokenizer_type=huggingface tokenizer_path=${TOKENIZER} \
 dataset_type=hf hf_path='trl-lib/tldr' \
 enable_single_controller=true \
 dtype=bfloat16 weight_dtype=bfloat16 \
-allow_split_physical_axes=true enable_goodput_recording=false monitor_goodput=false \
+allow_split_physical_axes=true enable_goodput_recording=true monitor_goodput=true \
 profiler=xplane profiler_steps=3 skip_first_n_steps_for_profiler=10"
 
 TRAINING_ARGS="run_name=${RUN_NAME} scan_layers=true \
 inference_replicas=${NUM_SAMPLERS} inference_devices_per_replica=${DEVICES_PER_SAMPLER} \
-inference_rollouts=5 \
+inference_rollouts=${INFERENCE_ROLLOUT} \
 per_device_batch_size=${TRAINING_PER_DEVICE_BATCH_SIZE} steps=${STEPS}"
 
 INFERENCE_ARGS="run_name=grpo scan_layers=false \
