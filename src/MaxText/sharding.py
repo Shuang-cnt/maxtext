@@ -39,6 +39,8 @@ def maybe_shard_with_name(inputs, named_sharding, shard_mode):
   In auto shardmode, this function hints inputs follow given named_sharding.
   In explicit shardmode, this function enforces inputs following named_sharding.
   """
+  if inputs is None:
+    return None
   if shard_mode == ShardMode.EXPLICIT:
     return reshard(inputs, named_sharding)
   else:
