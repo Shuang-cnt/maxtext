@@ -68,6 +68,8 @@ from MaxText.utils.ckpt_conversion.utils.utils import apply_hook_fns, HF_IDS
 
 jax.config.update("jax_platform_name", "cpu")
 
+USE_OLD = False
+
 
 class MemoryMonitorTqdm(tqdm):
   """Custom tqdm class that displays memory usage in the progress bar."""
@@ -236,13 +238,6 @@ def main(argv: Sequence[str]) -> None:
   del hf_model
   max_logging.log("HuggingFace model loaded and converted to NumPy.")
 
-  # Initialize MaxText model, optimizer, and abstract state
-  rng = jax.random.PRNGKey(config.init_weights_seed)
-  quant = quantizations.configure_quantization(config)
-  maxtext_model_flax = models.transformer_as_linen(config, mesh, quant=quant, model_mode=MODEL_MODE_TRAIN)
-  learning_rate_schedule = maxtext_utils.create_learning_rate_schedule(config)
-  tx = optimizers.get_optimizer(config, learning_rate_schedule)
-
   checkpoint_manager = checkpointing.create_orbax_checkpoint_manager(
       output_directory,
       enable_checkpointing=True,
@@ -252,12 +247,34 @@ def main(argv: Sequence[str]) -> None:
       use_zarr3=config.checkpoint_storage_use_zarr3,
   )
 
-  abstract_state, _, _, _ = maxtext_utils.setup_training_state(
-      maxtext_model_flax, None, tx, config, rng, mesh, checkpoint_manager
-  )
-  abstract_params_tree = abstract_state.params["params"]
-  abstract_params_flat, abstract_params_treedef = jax.tree_util.tree_flatten_with_path(abstract_params_tree)
-  max_logging.log("MaxText abstract model and state initialized.")
+  if USE_OLD:
+    # Initialize MaxText model, optimizer, and abstract state
+    rng = jax.random.PRNGKey(config.init_weights_seed)
+    quant = quantizations.configure_quantization(config)
+    maxtext_model_flax = models.transformer_as_linen(config, mesh, quant=quant, model_mode=MODEL_MODE_TRAIN)
+    learning_rate_schedule = maxtext_utils.create_learning_rate_schedule(config)
+    tx = optimizers.get_optimizer(config, learning_rate_schedule)
+
+    abstract_state, _, _, _ = maxtext_utils.setup_training_state(
+        maxtext_model_flax, None, tx, config, rng, mesh, checkpoint_manager
+    )
+    abstract_params_tree = abstract_state.params["params"]
+    abstract_params_flat, abstract_params_treedef = jax.tree_util.tree_flatten_with_path(abstract_params_tree)
+    max_logging.log("MaxText abstract model and state initialized.")
+    print(abstract_params_flat)
+    print(abstract_params_treedef)
+    print("==========")
+  else:
+    max_logging.log(f"MaxText abstract model and state initializing...")
+    quant = quantizations.configure_quantization(config)
+    maxtext_model_flax = models.transformer_as_linen(config, mesh, quant=quant, model_mode=MODEL_MODE_TRAIN)
+    abstract_params_tree = max_utils.get_abstract_param(maxtext_model_flax, config)["params"]
+    abstract_params_flat, abstract_params_treedef = jax.tree_util.tree_flatten_with_path(
+        abstract_params_tree,  # is_leaf=lambda x: not isinstance(x, dict)
+    )
+    max_logging.log("MaxText abstract model and state initialized.")
+    print(abstract_params_flat)
+    print(abstract_params_treedef)
 
   # Get parameter mappings and hooks
   # example of param mapping (gemma2, maxtext:huggingface):
@@ -279,7 +296,12 @@ def main(argv: Sequence[str]) -> None:
   for path_tuple, abstract_leaf_value in MemoryMonitorTqdm(
       abstract_params_flat, desc="Transforming weights", unit="param", leave=True, dynamic_ncols=True
   ):
-    key_parts = [k.key for k in path_tuple]
+
+    if USE_OLD:
+      key_parts = [k.key for k in path_tuple]
+    else:
+      key_parts = [k.key for k in path_tuple[:-1]]
+
     mt_param_key = "params-" + "-".join(key_parts)
     mt_target_shape_final = abstract_leaf_value.shape
 
