@@ -285,9 +285,9 @@ def main(argv: Sequence[str]) -> None:
     abstract_params_treedef = jax.tree_util.tree_structure(abstract_params_tree)
 
   max_logging.log("MaxText abstract model and state initialized.")
-  print(abstract_params_flat)
-  print(abstract_params_treedef)
-  print("==========")
+  # print(abstract_params_flat)
+  # print(abstract_params_treedef)
+  # print("==========")
 
   # Get parameter mappings and hooks
   # example of param mapping (gemma2, maxtext:huggingface):
