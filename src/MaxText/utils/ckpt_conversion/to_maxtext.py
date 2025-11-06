@@ -284,6 +284,7 @@ def main(argv: Sequence[str]) -> None:
       is_leaf=lambda x: isinstance(x, nn.LogicallyPartitioned),
   )
   abstract_params_treedef = jax.tree_util.tree_structure(abstract_params_tree)
+  del abstract_params_tree
 
   max_logging.log("MaxText abstract model and state initialized.")
   # print(abstract_params_flat)
