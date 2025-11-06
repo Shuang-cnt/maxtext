@@ -51,6 +51,8 @@ import jax
 import psutil
 from absl import app
 from flax.training import train_state
+import flax.linen as nn
+from flax.linen import partitioning as nn_partitioning
 from transformers import AutoConfig, AutoModelForCausalLM
 from tqdm import tqdm
 
@@ -68,8 +70,16 @@ from MaxText.utils.ckpt_conversion.utils.utils import apply_hook_fns, HF_IDS
 
 jax.config.update("jax_platform_name", "cpu")
 
-USE_OLD = False
-
+# USE_OLD = False
+USE_OLD = os.environ.get("USE_OLD", "True").lower()
+if USE_OLD == "true":
+  USE_OLD = True
+elif USE_OLD == "false":
+  USE_OLD = False
+else:
+  raise NotImplementedError
+assert type(USE_OLD) == bool
+print(f"USE_OLD={USE_OLD}")
 
 class MemoryMonitorTqdm(tqdm):
   """Custom tqdm class that displays memory usage in the progress bar."""
@@ -247,34 +257,47 @@ def main(argv: Sequence[str]) -> None:
       use_zarr3=config.checkpoint_storage_use_zarr3,
   )
 
+  max_logging.log(f"MaxText abstract model and state initializing...")
+  quant = quantizations.configure_quantization(config)
+  maxtext_model_flax = models.transformer_as_linen(config, mesh, quant=quant, model_mode=MODEL_MODE_TRAIN)
+
   if USE_OLD:
     # Initialize MaxText model, optimizer, and abstract state
     rng = jax.random.PRNGKey(config.init_weights_seed)
-    quant = quantizations.configure_quantization(config)
-    maxtext_model_flax = models.transformer_as_linen(config, mesh, quant=quant, model_mode=MODEL_MODE_TRAIN)
     learning_rate_schedule = maxtext_utils.create_learning_rate_schedule(config)
     tx = optimizers.get_optimizer(config, learning_rate_schedule)
-
     abstract_state, _, _, _ = maxtext_utils.setup_training_state(
         maxtext_model_flax, None, tx, config, rng, mesh, checkpoint_manager
     )
+
     abstract_params_tree = abstract_state.params["params"]
+    print(abstract_params_tree)
+    sys.exit(1)
+
     abstract_params_flat, abstract_params_treedef = jax.tree_util.tree_flatten_with_path(abstract_params_tree)
-    max_logging.log("MaxText abstract model and state initialized.")
-    print(abstract_params_flat)
-    print(abstract_params_treedef)
-    print("==========")
+    print(abstract_params_treedef["decoder"]["decoder_norm"]["scale"])
+
+    jax.tree.map(print, abstract_params_treedef)
+    # sys.exit(1)
+
   else:
-    max_logging.log(f"MaxText abstract model and state initializing...")
-    quant = quantizations.configure_quantization(config)
-    maxtext_model_flax = models.transformer_as_linen(config, mesh, quant=quant, model_mode=MODEL_MODE_TRAIN)
-    abstract_params_tree = max_utils.get_abstract_param(maxtext_model_flax, config)["params"]
-    abstract_params_flat, abstract_params_treedef = jax.tree_util.tree_flatten_with_path(
-        abstract_params_tree,  # is_leaf=lambda x: not isinstance(x, dict)
+    with maxtext_model_flax.mesh, nn_partitioning.axis_rules(config.logical_axis_rules):
+      abstract_params_tree = maxtext_utils.get_abstract_param(maxtext_model_flax, config)["params"]
+    # get abstract_params_flat (with param name and param shape) from abstract_params_tree
+    abstract_params_flat, _ = jax.tree_util.tree_flatten_with_path(abstract_params_tree)
+    # transform abstract_params_tree
+    abstract_params_tree = jax.tree.map(
+        lambda _: 0,
+        abstract_params_tree,
+        is_leaf=lambda x: isinstance(x, nn.LogicallyPartitioned),
     )
-    max_logging.log("MaxText abstract model and state initialized.")
-    print(abstract_params_flat)
+    abstract_params_treedef = jax.tree_util.tree_structure(abstract_params_tree)
     print(abstract_params_treedef)
+
+  max_logging.log("MaxText abstract model and state initialized.")
+  print(abstract_params_flat)
+  print(abstract_params_treedef)
+  print("==========")
 
   # Get parameter mappings and hooks
   # example of param mapping (gemma2, maxtext:huggingface):
@@ -301,6 +324,8 @@ def main(argv: Sequence[str]) -> None:
       key_parts = [k.key for k in path_tuple]
     else:
       key_parts = [k.key for k in path_tuple[:-1]]
+      print(key_parts)
+      # key_parts = [k.key for k in path_tuple]
 
     mt_param_key = "params-" + "-".join(key_parts)
     mt_target_shape_final = abstract_leaf_value.shape
@@ -344,6 +369,8 @@ def main(argv: Sequence[str]) -> None:
 
   del abstract_params_flat, hf_state_dict_numpy
   max_logging.log("Weight transformation complete.")
+
+  print(final_mt_weights)
 
   # Create final MaxText parameters tree
   jax_weights = jax.tree_util.tree_unflatten(abstract_params_treedef, final_mt_weights)

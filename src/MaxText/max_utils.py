@@ -989,17 +989,3 @@ def get_batch_seq_len_for_mode(config, model_mode):
     raise ValueError(f"Unknown model_mode: {model_mode}")
 
   return batch_size, seq_len
-
-
-def get_abstract_param(model, config):
-  key = jax.random.PRNGKey(0)
-  # input_shape = (1, 1)  # (batch, length)
-  input_shape = (config.micro_batch_size_to_train_on, config.max_target_length)
-  abstract_vars = jax.eval_shape(
-      model.init,
-      {"params": key, "dropout": key, "aqt": key},
-      jnp.ones(input_shape, dtype=jnp.int32),
-      jnp.ones(input_shape, dtype=jnp.int32),
-      encoder_images=None,
-  )
-  return abstract_vars
