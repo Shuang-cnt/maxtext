@@ -315,7 +315,8 @@ def main(argv: Sequence[str]) -> None:
     # if USE_OLD:
     #   key_parts = [k.key for k in path_tuple]
     # else:
-    key_parts = [k.key for k in path_tuple[:-1]]
+    # key_parts = [k.key for k in path_tuple[:-1]]
+    key_parts = [k.key for k in path_tuple if hasattr(k, "key")]
 
     mt_param_key = "params-" + "-".join(key_parts)
     mt_target_shape_final = abstract_leaf_value.shape
