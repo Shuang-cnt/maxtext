@@ -269,17 +269,8 @@ def main(argv: Sequence[str]) -> None:
     abstract_state, _, _, _ = maxtext_utils.setup_training_state(
         maxtext_model_flax, None, tx, config, rng, mesh, checkpoint_manager
     )
-
     abstract_params_tree = abstract_state.params["params"]
-    print(abstract_params_tree)
-    sys.exit(1)
-
     abstract_params_flat, abstract_params_treedef = jax.tree_util.tree_flatten_with_path(abstract_params_tree)
-    print(abstract_params_treedef["decoder"]["decoder_norm"]["scale"])
-
-    jax.tree.map(print, abstract_params_treedef)
-    # sys.exit(1)
-
   else:
     with maxtext_model_flax.mesh, nn_partitioning.axis_rules(config.logical_axis_rules):
       abstract_params_tree = maxtext_utils.get_abstract_param(maxtext_model_flax, config)["params"]
@@ -292,7 +283,6 @@ def main(argv: Sequence[str]) -> None:
         is_leaf=lambda x: isinstance(x, nn.LogicallyPartitioned),
     )
     abstract_params_treedef = jax.tree_util.tree_structure(abstract_params_tree)
-    print(abstract_params_treedef)
 
   max_logging.log("MaxText abstract model and state initialized.")
   print(abstract_params_flat)
@@ -324,8 +314,6 @@ def main(argv: Sequence[str]) -> None:
       key_parts = [k.key for k in path_tuple]
     else:
       key_parts = [k.key for k in path_tuple[:-1]]
-      print(key_parts)
-      # key_parts = [k.key for k in path_tuple]
 
     mt_param_key = "params-" + "-".join(key_parts)
     mt_target_shape_final = abstract_leaf_value.shape
@@ -369,8 +357,6 @@ def main(argv: Sequence[str]) -> None:
 
   del abstract_params_flat, hf_state_dict_numpy
   max_logging.log("Weight transformation complete.")
-
-  print(final_mt_weights)
 
   # Create final MaxText parameters tree
   jax_weights = jax.tree_util.tree_unflatten(abstract_params_treedef, final_mt_weights)
