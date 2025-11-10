@@ -974,7 +974,6 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
     ]
 
     # GptOssAttention
-    # attn_prefix = f"{prefix}-GptOssAttention"
     mapping.update(
         {
             f"{prefix}-GptOssAttention-query-kernel": [f"model.layers.{i}.self_attn.q_proj.weight" for i in hf_indices],
@@ -990,7 +989,6 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
     )
 
     # GptOssMlp
-    # mlp_prefix = f"{prefix}-GptOssMlp"
     # 1. Gate/Router
     mapping.update(
         {
@@ -1094,9 +1092,7 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interv
 
     # MLP Kernels & Biases
     hooks[f"{prefix}-GptOssMlp-gate-kernel"] = transpose
-    # Note: wi_0 and wi_1 hooks would need to be complex 'combiners' if saving_to_hf=True
-    # to re-interleave them into gate_up_proj.
-    # TODO(shuningjin)
+    # Experts (Gate/Up Fused Projection), N-to-1 mapping
     hooks[(f"{prefix}-GptOssMlp-wi_0", f"{prefix}-GptOssMlp-wi_1")] = interleave
     hooks[(f"{prefix}-GptOssMlp-wi_0_bias", f"{prefix}-GptOssMlp-wi_1_bias")] = interleave
 
