@@ -947,7 +947,7 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
   - (GptOssMlp-wi_0, GptOssMlp-wi_1): mlp.experts.gate_up_proj
   - (GptOssMlp-wi_0_bias, GptOssMlp-wi_1_bias): mlp.experts.gate_up_proj_bias
   """
-  # TODO(shuningjin): add unscan support
+  # TODO(shuningjin): add unscan support, b/459541579
   if not scan_layers:
     raise NotImplementedError("Current gpt-oss mapping only supports scan_layers=True")
 
@@ -1030,10 +1030,10 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interv
   - (GptOssMlp-wi_0, GptOssMlp-wi_1): mlp.experts.gate_up_proj
   - (GptOssMlp-wi_0_bias, GptOssMlp-wi_1_bias): mlp.experts.gate_up_proj_bias
   """
-  # TODO(shuningjin): support hf->orbax(scan)
+  # TODO(shuningjin): support hf->orbax(scan), b/459541579
   if not saving_to_hf:
     raise NotImplementedError("Currently gpt-oss only supports saving_to_hf=True.")
-  # TODO(shuningjin): add unscan support
+  # TODO(shuningjin): add unscan support, b/459541579
   if not scan_layers:
     raise NotImplementedError("Currently gpt-oss only supports scan_layers=True.")
 
@@ -1074,6 +1074,7 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interv
       return wi_0_1
     else:
       # wi_0_1 -> (wi_0, wi_1)
+      # TODO(shuningjin): support hf->orbax(scan), b/459541579
       raise NotImplementedError
 
   hooks = {

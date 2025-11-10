@@ -150,8 +150,8 @@ def process_maxtext_param(
   hf_target_paths = param_map[maxtext_param_key]
   if not hf_target_paths:
     raise ValueError(f"No HF target paths found for MaxText key '{maxtext_param_key}'")
-  if not isinstance(hf_target_paths, list):
-    hf_target_paths = [hf_target_paths]
+  # if not isinstance(hf_target_paths, list):
+  #   hf_target_paths = [hf_target_paths]
 
   # If maxtext_param_key is not in hook_fn_map, current_hook_fns is None, indicating identity (no transformation)
   current_hook_fns = hook_fn_map.get(maxtext_param_key)
@@ -159,23 +159,23 @@ def process_maxtext_param(
   # This list will store tuples of (hf_path, hf_weight)
   output_weights = [] 
 
-  # Case 0: Unscan, or Scan with single layer
-  if len(hf_target_paths) == 1:
-    max_logging.log("\tunscan or scan single layer")
-    hf_path = hf_target_paths[0]
+  # Case 1: Unscan
+  if not isinstance(hf_target_paths, list):
+    max_logging.log("\tunscan")
+    hf_path = hf_target_paths
     _process(hf_path, maxtext_param_weight, output_weights, current_hook_fns, hf_shape_map)
     return output_weights
 
   # Stacked MaxText weight
   # This now handles three cases:
-  # 1. Scanned MoE layers (2D list of targets from a tensor stacked on expert and layer axes)
-  # 2. Unscanned MoE layers (1D list of targets from a tensor stacked only on the expert axis)
-  # 3. Standard scanned layers (1D list of targets from a tensor stacked only on the layer axis)
+  # 2. Scanned MoE layers (2D list of targets from a tensor stacked on expert and layer axes)
+  # 3. Unscanned MoE layers (1D list of targets from a tensor stacked only on the expert axis)
+  # 4. Standard scanned layers (1D list of targets from a tensor stacked only on the layer axis)
   is_scanned_moe_layer = isinstance(hf_target_paths[0], list)
 
   if is_scanned_moe_layer:
     max_logging.log("\tscan moe")
-    # Case 1: Scanned MoE layer, e.g., from 'layers-moe_block-wi_0'.
+    # Case 2: Scanned MoE layer, e.g., from 'layers-moe_block-wi_0'.
     # The tensor is stacked on expert and layer axes. We slice experts first, then layers.
     # MaxText format is (experts, layers, ...), so expert axis is 0, layer axis is 1.
     expert_axis_to_slice = 0
@@ -193,7 +193,7 @@ def process_maxtext_param(
 
     return output_weights
 
-  # Case 2 or 3: The source tensor is stacked on a single axis.
+  # Case 3 or 4: The source tensor is stacked on a single axis.
   # We determine if it's an unscanned MoE (expert axis) or standard scanned (layer axis).
   is_unscanned_moe = "moe_block" in maxtext_param_key and any(
       f"_{i}-" in maxtext_param_key for i in range(maxtext_config.base_num_decoder_layers)
@@ -201,12 +201,12 @@ def process_maxtext_param(
 
   if is_unscanned_moe:
     max_logging.log("\tunscan moe")
-    # Case 2: Unscanned MoE layer, e.g., from 'layers_0-moe_block-wi_0'.
+    # Case 3: Unscanned MoE layer, e.g., from 'layers_0-moe_block-wi_0'.
     # The tensor is stacked ONLY on the expert axis. Assuming expert is axis 0.
     axis_to_slice = 0
   else:
     max_logging.log("\tscan")
-    # Case 3: Standard scanned layer.
+    # Case 4: Standard scanned layer.
     # The tensor is stacked ONLY on the layer axis.
     axis_to_slice = maxtext_config.param_scan_axis
 
