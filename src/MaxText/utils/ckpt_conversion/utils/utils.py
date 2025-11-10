@@ -113,9 +113,35 @@ def process_maxtext_param(
     hf_shape_map: dict[str, Any],
     maxtext_config: Any,
 ) -> list[tuple[str, np.ndarray]]:
-  """TODO(shuningjin): write doc string and update comments related to N-to-1 mapping
+  """Processes a single MaxText parameter (or a group of parameters) for conversion to Hugging Face format.
 
-  Return a list of tuples (hf_path, hf_weight)
+  This function is responsible for taking a MaxText parameter (which might be
+  a single tensor or a list of tensors for N-to-1 mappings) and transforming
+  it into one or more Hugging Face compatible parameters. It handles various
+  scenarios including:
+  - 1-to-1 mappings (single MaxText param to single HF param).
+  - N-to-1 mappings (multiple MaxText params combined into a single HF param).
+  - Stacked MaxText parameters (e.g., scanned layers or MoE experts) that need
+    to be unstacked into individual Hugging Face parameters.
+
+  Args:
+    maxtext_param_key: The key (or tuple of keys for N-to-1 mappings) identifying
+      the MaxText parameter(s) being processed.
+    maxtext_param_weight: The actual weight(s) of the MaxText parameter(s).
+      This can be a single `jax.Array` or a list of `jax.Array` for N-to-1 mappings.
+    param_map: A dictionary mapping MaxText parameter keys to their corresponding
+      Hugging Face target path(s).
+    hook_fn_map: A dictionary mapping MaxText parameter keys to transformation
+      functions (hooks) that should be applied to the weights.
+    hf_shape_map: A dictionary mapping Hugging Face parameter paths to their
+      expected shapes.
+    maxtext_config: The MaxText configuration object, used to determine
+      details like `param_scan_axis` and `base_num_decoder_layers`.
+
+  Returns:
+    A list of tuples, where each tuple contains:
+    - hf_path (str): The Hugging Face parameter path.
+    - hf_weight (np.ndarray): The transformed Hugging Face compatible weight.
   """
   max_logging.log(f"maxtext param: {maxtext_param_key}")
 
@@ -127,11 +153,11 @@ def process_maxtext_param(
   if not isinstance(hf_target_paths, list):
     hf_target_paths = [hf_target_paths]
 
-  # If maxtext_param_key is not in hook_fn_map, current_hook_fns is None, indicating identity
+  # If maxtext_param_key is not in hook_fn_map, current_hook_fns is None, indicating identity (no transformation)
   current_hook_fns = hook_fn_map.get(maxtext_param_key)
 
-  # a list of tuples (hf_path, hf_weight)
-  output_weights = []
+  # This list will store tuples of (hf_path, hf_weight)
+  output_weights = [] 
 
   # Case 0: Unscan, or Scan with single layer
   if len(hf_target_paths) == 1:
@@ -184,11 +210,14 @@ def process_maxtext_param(
     # The tensor is stacked ONLY on the layer axis.
     axis_to_slice = maxtext_config.param_scan_axis
 
+  # Iterate through the slices of the MaxText weight along the determined stacking axis.
   for i, hf_path in enumerate(hf_target_paths):
     if isinstance(maxtext_param_weight, list):
-      # N-to-1 mapping
+      # This handles N-to-1 mappings where `maxtext_param_weight` is a list of tensors.
+      # Each tensor in the list is sliced independently along the `axis_to_slice`.
       weight_slice = [jax.lax.index_in_dim(x, i, axis=axis_to_slice, keepdims=False) for x in maxtext_param_weight]
     else:
+      # For 1-to-1 mappings, slice the single MaxText tensor.
       weight_slice = jax.lax.index_in_dim(maxtext_param_weight, i, axis=axis_to_slice, keepdims=False)
     _process(hf_path, weight_slice, output_weights, current_hook_fns, hf_shape_map)
 

@@ -86,8 +86,13 @@ def _get_model_mappings(model_name: str, scan_layers: bool, hf_config_dict: dict
     model_name: The name of the model (e.g., "gemma2-2b").
     scan_layers: Boolean indicating if the model was trained with scanned layers.
     hf_config_dict: The Hugging Face model configuration dictionary.
-    inhomogeneous_layer_cycle_interval: For complex architectures (llama4, gpt-oss), there are repeated sets of
-      n inhomogeneous layers. The scan structure has n blocks.
+    inhomogeneous_layer_cycle_interval: For models with complex, non-uniform
+      layer structures (e.g., a repeating pattern of different layer types),
+      this specifies the number of unique layers in one cycle of the pattern.
+      For example, gpt-oss has 'sliding_attention' layer followed by a 
+      'full_attention' layer, this value would be 2. This allows
+      the conversion to correctly map parameters from a scanned MaxText model
+      where these inhomogeneous layers are packed into a single scanned block.
 
   Returns:
     A dictionary containing the parameter mapping, shape mapping, and hook
@@ -109,16 +114,24 @@ def _get_model_mappings(model_name: str, scan_layers: bool, hf_config_dict: dict
 
 
 def _check_param_map_keys(param_map_keys, maxtext_state_keys):
-  """Verifies that the keys in the parameter map match the keys in the MaxText state.
+  """Verifies that the parameter mapping covers every weight in the MaxText checkpoint.
 
-  This function handles cases where the parameter map contains tuples as keys,
-  which represent N-to-1 mappings (multiple MaxText parameters combined into one
-  Hugging Face parameter). It flattens these tuples to ensure every individual
-  MaxText parameter is accounted for.
+  This function acts as a critical sanity check before starting the weight
+  transformation. It ensures that there is a defined mapping for every parameter
+  found in the source MaxText checkpoint.
+
+  It handles cases where the parameter map contains tuples as keys, which
+  represent N-to-1 mappings (where multiple MaxText parameters are combined
+  into a single Hugging Face parameter). It flattens these tuples to ensure
+  that every individual source parameter is accounted for.
+
+  A mismatch between the mapping and the checkpoint keys will raise a
+  ValueError, preventing an incomplete or incorrect conversion.
 
   Args:
-    param_map_keys: The keys from the parameter mapping dictionary.
-    maxtext_state_keys: A set of all parameter keys from the loaded MaxText
+    param_map_keys: The keys from the parameter mapping dictionary, which may
+      include tuples for N-to-1 mappings.
+    maxtext_state_keys: A set of all parameter keys loaded from the MaxText
       checkpoint.
   """
   flattened_map_keys = set()
@@ -218,17 +231,19 @@ def main(argv: Sequence[str]) -> None:
   # Check param_map after flattening has the same keys as maxtext_state_dict
   _check_param_map_keys(param_map.keys(), maxtext_state_dict.keys())
 
-  # Iterate over param_map to build: mt_param_key:mt_weights
+  # Iterate through the parameter map to transform and collect weights.
+  # This loop handles both simple 1-to-1 mappings and complex N-to-1 mappings
+  # (where multiple MaxText weights are combined into a single HF weight).
   max_logging.log("\nProccessing weight...")
   start = time.time()
   processed_params_list = []
 
   for key in tqdm(param_map, total=len(param_map)):
     if isinstance(key, tuple):
-      # key is tuple of param names, weight is list of param weights
+      # if key is tuple of param names, weight is list of param weights
       weight = [maxtext_state_dict[subkey] for subkey in key]
     else:
-      # key is single param name, weight is single param weight
+      # if key is single param name, weight is single param weight
       weight = maxtext_state_dict[key]
 
     processed_params = process_maxtext_param(key, weight, param_map, hook_fn_map, shape_map, config)

@@ -947,6 +947,7 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
   - (GptOssMlp-wi_0, GptOssMlp-wi_1): mlp.experts.gate_up_proj
   - (GptOssMlp-wi_0_bias, GptOssMlp-wi_1_bias): mlp.experts.gate_up_proj_bias
   """
+  # TODO(shuningjin): add unscan support
   if not scan_layers:
     raise NotImplementedError("Current gpt-oss mapping only supports scan_layers=True")
 
@@ -1023,12 +1024,20 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
 
 
 def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
-  """Transformation hooks for gpt-oss parameters."""
-  # TODO(shuningjin)
-  if not scan_layers:
-    raise NotImplementedError("Currently gpt-oss only supports scan_layers=True.")
+  """Transformation hooks for gpt-oss parameters.
+
+  Handles the inhomogeneous scan block structure (layer_cycle_interval)
+
+  Handles N-to-1 mapping from maxtext to huggingface
+  - (GptOssMlp-wi_0, GptOssMlp-wi_1): mlp.experts.gate_up_proj
+  - (GptOssMlp-wi_0_bias, GptOssMlp-wi_1_bias): mlp.experts.gate_up_proj_bias
+  """
+  # TODO(shuningjin): support hf->orbax(scan)
   if not saving_to_hf:
     raise NotImplementedError("Currently gpt-oss only supports saving_to_hf=True.")
+  # TODO(shuningjin): add unscan support
+  if not scan_layers:
+    raise NotImplementedError("Currently gpt-oss only supports scan_layers=True.")
 
   def transpose(input_tensor, target_shape=None):
     if saving_to_hf:
