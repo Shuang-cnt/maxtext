@@ -73,6 +73,8 @@ HF_IDS = {
     "qwen3-235b-a22b": "Qwen/Qwen3-235B-A22B-Thinking-2507",
     "qwen3-480b-a35b": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
     "deepseek3-671b": "deepseek-ai/DeepSeek-V3",
+    "gpt-oss-20b": "openai/gpt-oss-20b",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
     "qwen3-omni-30b-a3b": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
 }
 
@@ -88,9 +90,11 @@ def _get_local_directory(output_dir: str) -> str:
   return local_dir
 
 
-def _process(hf_path, processed_slice, output_weights, current_hook_fns, shape_map_local):
+def _process(hf_path, processed_slice, output_weights, current_hook_fns, hf_shape_map):
   """Applies hooks, converts a JAX slice to NumPy, and appends it to the output list."""
-  target_hf_shape = shape_map_local[hf_path]
+  if hf_path not in hf_shape_map:
+    raise ValueError(f"HF path '{hf_path}' not found in hf_shape_map.")
+  target_hf_shape = hf_shape_map[hf_path]
   if current_hook_fns:
     # otherwise identity
     processed_slice = apply_hook_fns(processed_slice, target_hf_shape, current_hook_fns)
@@ -101,56 +105,39 @@ def _process(hf_path, processed_slice, output_weights, current_hook_fns, shape_m
   output_weights.append((hf_path, numpy_slice))
 
 
-def process_leaf_param(
-    path_tuple: Any,
-    leaf_value: jax.Array,
-    param_map_local: dict[str, Any],
-    shape_map_local: dict[str, Any],
-    hook_fn_map_local: dict[str, Any],
-    current_config: Any,
+def process_maxtext_param(
+    maxtext_param_key: str | tuple[str, ...],
+    maxtext_param_weight: jax.Array | list[jax.Array],
+    param_map: dict[str, Any],
+    hook_fn_map: dict[str, Any],
+    hf_shape_map: dict[str, Any],
+    maxtext_config: Any,
 ) -> list[tuple[str, np.ndarray]]:
-  """Processes a single leaf from the MaxText parameter tree."""
-  # Construct maxtext_param_key from path_tuple
-  key_parts = []
-  for p_entry in path_tuple:
-    if isinstance(p_entry, jax.tree_util.DictKey):
-      key_parts.append(p_entry.key)
-    else:
-      max_logging.log(f"Warning: Path tuple {path_tuple} contains non-DictKey entry '{p_entry}'. Skipping this path.")
-      return []  # Skip this parameter
+  """TODO(shuningjin): write doc string and update comments related to N-to-1 mapping
 
-  maxtext_param_key = "params-" + "-".join(key_parts)
-  max_logging.log(f"mt param: {maxtext_param_key}")
+  Return a list of tuples (hf_path, hf_weight)
+  """
+  max_logging.log(f"maxtext param: {maxtext_param_key}")
 
-  if not isinstance(leaf_value, (jax.Array, np.ndarray)):
-    max_logging.log(f"Warning: Leaf value for {maxtext_param_key} is not an array. Type: {type(leaf_value)}. Skipping.")
-    return []
-
-  if maxtext_param_key not in param_map_local:
-    max_logging.log(f"Warning: MaxText param key '{maxtext_param_key}' not found in param_map. Skipping.")
-    return []
-
-  hf_target_paths = param_map_local[maxtext_param_key]
+  if maxtext_param_key not in param_map:
+    raise ValueError(f"MaxText param key '{maxtext_param_key}' not found in param_map.")
+  hf_target_paths = param_map[maxtext_param_key]
+  if not hf_target_paths:
+    raise ValueError(f"No HF target paths found for MaxText key '{maxtext_param_key}'")
   if not isinstance(hf_target_paths, list):
     hf_target_paths = [hf_target_paths]
 
-  if not hf_target_paths:
-    max_logging.log(f"Warning: No HF target paths found for MaxText key '{maxtext_param_key}'. Skipping.")
-    return []
+  # If maxtext_param_key is not in hook_fn_map, current_hook_fns is None, indicating identity
+  current_hook_fns = hook_fn_map.get(maxtext_param_key)
 
-  current_hook_fns = hook_fn_map_local.get(maxtext_param_key)
+  # a list of tuples (hf_path, hf_weight)
   output_weights = []
 
   # Case 0: Unscan, or Scan with single layer
   if len(hf_target_paths) == 1:
     max_logging.log("\tunscan or scan single layer")
     hf_path = hf_target_paths[0]
-    if hf_path not in shape_map_local:
-      max_logging.log(
-          f"Warning: HF path '{hf_path}' not found in shape_map for MaxText key '{maxtext_param_key}'. Skipping."
-      )
-      return []
-    _process(hf_path, leaf_value, output_weights, current_hook_fns, shape_map_local)
+    _process(hf_path, maxtext_param_weight, output_weights, current_hook_fns, hf_shape_map)
     return output_weights
 
   # Stacked MaxText weight
@@ -170,48 +157,40 @@ def process_leaf_param(
     # Outer loop for experts
     for expert_idx, expert_paths_for_layer in enumerate(hf_target_paths):
       # Slice along the expert axis to get the tensor for the current expert across all layers.
-      expert_tensor_slice = jax.lax.index_in_dim(leaf_value, expert_idx, axis=expert_axis_to_slice, keepdims=False)
+      expert_tensor_slice = jax.lax.index_in_dim(maxtext_param_weight, expert_idx, axis=expert_axis_to_slice, keepdims=False)
       # Inner loop for layers
       for layer_idx, hf_path in enumerate(expert_paths_for_layer):
-        if hf_path not in shape_map_local:
-          max_logging.log(
-              f"Warning: HF path '{hf_path}' not found in shape_map for MaxText key '{maxtext_param_key}'. Skipping."
-          )
-          continue
-
         # Slice the expert tensor along the layer axis to get the final individual weight.
         # axis is 0 on the new sliced tensor
         layer_tensor_slice = jax.lax.index_in_dim(expert_tensor_slice, layer_idx, axis=0, keepdims=False)
-        _process(hf_path, layer_tensor_slice, output_weights, current_hook_fns, shape_map_local)
+        _process(hf_path, layer_tensor_slice, output_weights, current_hook_fns, hf_shape_map)
 
     return output_weights
 
   # Case 2 or 3: The source tensor is stacked on a single axis.
   # We determine if it's an unscanned MoE (expert axis) or standard scanned (layer axis).
   is_unscanned_moe = "moe_block" in maxtext_param_key and any(
-      f"_{i}-" in maxtext_param_key for i in range(current_config.base_num_decoder_layers)
+      f"_{i}-" in maxtext_param_key for i in range(maxtext_config.base_num_decoder_layers)
   )
 
   if is_unscanned_moe:
     max_logging.log("\tunscan moe")
     # Case 2: Unscanned MoE layer, e.g., from 'layers_0-moe_block-wi_0'.
-    # The tensor is stacked ONLY on the expert axis.
-    axis_to_slice = 0  # Assuming expert is axis 0.
+    # The tensor is stacked ONLY on the expert axis. Assuming expert is axis 0.
+    axis_to_slice = 0
   else:
     max_logging.log("\tscan")
     # Case 3: Standard scanned layer.
     # The tensor is stacked ONLY on the layer axis.
-    axis_to_slice = current_config.param_scan_axis
+    axis_to_slice = maxtext_config.param_scan_axis
 
   for i, hf_path in enumerate(hf_target_paths):
-    if hf_path not in shape_map_local:
-      max_logging.log(
-          f"Warning: HF path '{hf_path}' not found in shape_map for MaxText key '{maxtext_param_key}'. Skipping."
-      )
-      continue
-
-    weight_slice = jax.lax.index_in_dim(leaf_value, i, axis=axis_to_slice, keepdims=False)
-    _process(hf_path, weight_slice, output_weights, current_hook_fns, shape_map_local)
+    if isinstance(maxtext_param_weight, list):
+      # N-to-1 mapping
+      weight_slice = [jax.lax.index_in_dim(x, i, axis=axis_to_slice, keepdims=False) for x in maxtext_param_weight]
+    else:
+      weight_slice = jax.lax.index_in_dim(maxtext_param_weight, i, axis=axis_to_slice, keepdims=False)
+    _process(hf_path, weight_slice, output_weights, current_hook_fns, hf_shape_map)
 
   return output_weights
 
