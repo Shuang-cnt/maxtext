@@ -120,7 +120,7 @@ def _check_param_map_keys(param_map_keys, maxtext_state_keys):
     maxtext_state_keys: Set of parameter keys loaded from the MaxText checkpoint.
 
   Returns:
-    A set of 'filtered' mapping keys (strings or tuples) that are fully present
+    A list of 'filtered' mapping keys (strings or tuples) that are fully present
     and valid based on `maxtext_state_keys`.
 
   Raises:
@@ -149,12 +149,12 @@ def _check_param_map_keys(param_map_keys, maxtext_state_keys):
     max_logging.log(f"Warning: extra keys in param_map are skipped: {extra_keys}")
 
   # skip extra keys in param map
-  filtered_map_keys = set()
+  filtered_map_keys = []
   for key in param_map_keys:
-    if (isinstance(key, tuple) and all(k in maxtext_state_keys for k in key)) or (
-        isinstance(key, str) and key in maxtext_state_keys
+    if (isinstance(key, str) and key in maxtext_state_keys) or (
+        isinstance(key, tuple) and all(k in maxtext_state_keys for k in key)
     ):
-      filtered_map_keys.add(key)
+      filtered_map_keys.append(key)
   return filtered_map_keys
 
 
@@ -211,9 +211,7 @@ def main(argv: Sequence[str]) -> None:
   processor = AutoProcessor.from_pretrained(hf_tokenizer_id, token=hf_token) if config.use_multimodal else None
 
   # 3. Get parameter mappings
-  mappings = _get_model_mappings(
-      model_key, config.scan_layers, hf_config_obj.to_dict(), config.inhomogeneous_layer_cycle_interval
-  )
+  mappings = _get_model_mappings(model_key, config.scan_layers, hf_config_obj.to_dict(), config)
   param_map = mappings["param_mapping"]
   shape_map = mappings["shape_mapping"]  # HF target shapes
   hook_fn_map = mappings["hook_fn_mapping"]

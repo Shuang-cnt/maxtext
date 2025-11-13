@@ -968,7 +968,7 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=Fals
 
   for block_idx in range(layer_cycle_interval):
     # Identify all original HF layer indices that collapse into this block
-    hf_indices = list(range(block_idx, n_layers, maxtext_config.layer_cycle_interval))
+    hf_indices = list(range(block_idx, n_layers, layer_cycle_interval))
     prefix = f"params-decoder-layers-layers_{block_idx}"
 
     # Layer Norms
