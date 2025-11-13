@@ -150,8 +150,6 @@ def process_maxtext_param(
   hf_target_paths = param_map[maxtext_param_key]
   if not hf_target_paths:
     raise ValueError(f"No HF target paths found for MaxText key '{maxtext_param_key}'")
-  # if not isinstance(hf_target_paths, list):
-  #   hf_target_paths = [hf_target_paths]
 
   # If maxtext_param_key is not in hook_fn_map, current_hook_fns is None, indicating identity (no transformation)
   current_hook_fns = hook_fn_map.get(maxtext_param_key)

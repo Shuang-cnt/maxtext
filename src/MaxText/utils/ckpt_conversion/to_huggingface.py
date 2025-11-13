@@ -114,25 +114,26 @@ def _get_model_mappings(model_name: str, scan_layers: bool, hf_config_dict: dict
 
 
 def _check_param_map_keys(param_map_keys, maxtext_state_keys):
-  """Verifies that the parameter mapping covers every weight in the MaxText checkpoint.
+  """Validates map coverage, handles N-to-1 mappings, and filters unused keys.
 
-  This function acts as a critical sanity check before starting the weight
-  transformation. It ensures that there is a defined mapping for every parameter
-  found in the source MaxText checkpoint.
+  Ensures every MaxText checkpoint key (`maxtext_state_keys`) is covered by
+  the flattened parameter map. Keys in the map that are not present in the
+  checkpoint (common for multi-variant maps like gemma3 or qwen3) are skipped.
 
-  It handles cases where the parameter map contains tuples as keys, which
-  represent N-to-1 mappings (where multiple MaxText parameters are combined
-  into a single Hugging Face parameter). It flattens these tuples to ensure
-  that every individual source parameter is accounted for.
-
-  A mismatch between the mapping and the checkpoint keys will raise a
-  ValueError, preventing an incomplete or incorrect conversion.
+  Tuple keys represent N-to-1 mappings (multiple MaxText keys combining into one
+  target key) and are only returned if all constituent keys exist in the checkpoint.
 
   Args:
-    param_map_keys: The keys from the parameter mapping dictionary, which may
-      include tuples for N-to-1 mappings.
-    maxtext_state_keys: A set of all parameter keys loaded from the MaxText
-      checkpoint.
+    param_map_keys: Keys from the parameter mapping (strings or N-to-1 tuples).
+    maxtext_state_keys: Set of parameter keys loaded from the MaxText checkpoint.
+
+  Returns:
+    A set of 'filtered' mapping keys (strings or tuples) that are fully present
+    and valid based on `maxtext_state_keys`.
+
+  Raises:
+    ValueError: If `maxtext_state_keys` is NOT a subset of the flattened
+      `param_map_keys`.
   """
   flattened_map_keys = set()
   for key in param_map_keys:
@@ -141,12 +142,28 @@ def _check_param_map_keys(param_map_keys, maxtext_state_keys):
     else:
       flattened_map_keys.add(key)
 
-  if flattened_map_keys != maxtext_state_keys:
+  # every maxtext state key must be covered by param map
+  missing_keys = maxtext_state_keys - flattened_map_keys
+  if missing_keys:
     raise ValueError(
-        f"param_map and maxtext_state_dict have different keys."
+        f"maxtext_state_dict must be a subset of flattened param_map"
         + f"\nparam map\n{param_map_keys}"
         + f"\nmaxtext:\n{maxtext_state_keys}"
     )
+
+  # param map may have extra keys
+  extra_keys = flattened_map_keys - maxtext_state_keys
+  if extra_keys:
+    max_logging.log(f"Warning: extra keys in param_map are skipped: {extra_keys}")
+
+  # skip extra keys in param map
+  filtered_map_keys = set()
+  for key in param_map_keys:
+    if (isinstance(key, tuple) and all(k in maxtext_state_keys for k in key)) or (
+        isinstance(key, str) and key in maxtext_state_keys
+    ):
+      filtered_map_keys.add(key)
+  return filtered_map_keys
 
 
 def main(argv: Sequence[str]) -> None:
@@ -228,8 +245,9 @@ def main(argv: Sequence[str]) -> None:
     maxtext_state_dict[maxtext_param_key] = leaf_value
 
   # The param_map may contain tuples as keys, which represent N-to-1 mappings from maxtext to huggingface
-  # Check param_map after flattening has the same keys as maxtext_state_dict
-  _check_param_map_keys(param_map.keys(), maxtext_state_dict.keys())
+  # Check maxtext_state_dict is a subset of flattened param_map
+  # Skip extra keys from param_map
+  filtered_map_keys = _check_param_map_keys(param_map.keys(), maxtext_state_dict.keys())
 
   # Iterate through the parameter map to transform and collect weights.
   # This loop handles both simple 1-to-1 mappings and complex N-to-1 mappings
@@ -238,7 +256,7 @@ def main(argv: Sequence[str]) -> None:
   start = time.time()
   processed_params_list = []
 
-  for key in tqdm(param_map, total=len(param_map)):
+  for key in tqdm(filtered_map_keys, total=len(filtered_map_keys)):
     if isinstance(key, tuple):
       # if key is tuple of param names, weight is list of param weights
       weight = [maxtext_state_dict[subkey] for subkey in key]

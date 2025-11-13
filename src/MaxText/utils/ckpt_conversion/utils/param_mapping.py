@@ -835,14 +835,16 @@ def DEEPSEEK_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_
   attention_keys = {
       "pre_self_attention_layer_norm-scale": "input_layernorm.weight",
       "post_self_attention_layer_norm-scale": "post_attention_layernorm.weight",
-      "self_attention-query-kernel": "self_attn.q_proj.weight",
-      "self_attention-wq_a-kernel": "self_attn.q_a_proj.weight",
-      "self_attention-q_norm-scale": "self_attn.q_a_layernorm.weight",
-      "self_attention-wq_b-kernel": "self_attn.q_b_proj.weight",
       "self_attention-wkv_a-kernel": "self_attn.kv_a_proj_with_mqa.weight",
       "self_attention-kv_norm-scale": "self_attn.kv_a_layernorm.weight",
       "self_attention-wkv_b-kernel": "self_attn.kv_b_proj.weight",
       "self_attention-out-kernel": "self_attn.o_proj.weight",
+      # v3
+      "self_attention-wq_a-kernel": "self_attn.q_a_proj.weight",
+      "self_attention-q_norm-scale": "self_attn.q_a_layernorm.weight",
+      "self_attention-wq_b-kernel": "self_attn.q_b_proj.weight",
+      # v2
+      "self_attention-query-kernel": "self_attn.q_proj.weight",
   }
   # Dense Layers
   dense_layer_keys = attention_keys | {
@@ -861,6 +863,7 @@ def DEEPSEEK_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_
       "DeepSeekMoeBlock_0-shared_experts-wi_1-kernel": "mlp.shared_experts.up_proj.weight",
       "DeepSeekMoeBlock_0-shared_experts-wo-kernel": "mlp.shared_experts.down_proj.weight",
       "DeepSeekMoeBlock_0-MoeBlock_0-gate-kernel": "mlp.gate.weight",
+      # v3
       "DeepSeekMoeBlock_0-MoeBlock_0-gate-bias": "mlp.gate.e_score_correction_bias",
   }
   for maxtext_key, hf_key in moe_layer_keys.items():

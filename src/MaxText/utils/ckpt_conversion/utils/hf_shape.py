@@ -350,11 +350,7 @@ def DEEPSEEK_HF_WEIGHTS_TO_SHAPE(config):
 
 
 def GPT_OSS_HF_WEIGHTS_TO_SHAPE(config):
-  """Returns mapping between HuggingFace GptOss weights path and their shape.
-
-  Derived from GptOssModel definition in modular_gpt_oss.py.
-  https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt_oss/modeling_gpt_oss.py
-  """
+  """Returns mapping between HuggingFace GptOss weights path and their shape."""
   # --- Extract Core Config Values ---
   hidden_size = config["hidden_size"]
   num_hidden_layers = config["num_hidden_layers"]
