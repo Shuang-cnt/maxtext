@@ -79,20 +79,14 @@ os.environ["JAX_PLATFORMS"] = "cpu"
 os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=16"
 
 
-def _get_model_mappings(model_name: str, scan_layers: bool, hf_config_dict: dict, inhomogeneous_layer_cycle_interval: int):
+def _get_model_mappings(model_name: str, scan_layers: bool, hf_config_dict: dict, maxtext_config: Any):
   """Retrieves parameter, shape, and hook function mappings for the model.
 
   Args:
     model_name: The name of the model (e.g., "gemma2-2b").
     scan_layers: Boolean indicating if the model was trained with scanned layers.
     hf_config_dict: The Hugging Face model configuration dictionary.
-    inhomogeneous_layer_cycle_interval: For models with complex, non-uniform
-      layer structures (e.g., a repeating pattern of different layer types),
-      this specifies the number of unique layers in one cycle of the pattern.
-      For example, gpt-oss has 'sliding_attention' layer followed by a 
-      'full_attention' layer, this value would be 2. This allows
-      the conversion to correctly map parameters from a scanned MaxText model
-      where these inhomogeneous layers are packed into a single scanned block.
+    maxtext_config:  The maxtext model configuration.
 
   Returns:
     A dictionary containing the parameter mapping, shape mapping, and hook
@@ -105,11 +99,9 @@ def _get_model_mappings(model_name: str, scan_layers: bool, hf_config_dict: dict
     raise ValueError(f"Mappings not found for model: {model_name}. Available PARAM_MAPPING keys: {PARAM_MAPPING.keys()}")
 
   return {
-      "param_mapping": PARAM_MAPPING[model_name](hf_config_dict, scan_layers, inhomogeneous_layer_cycle_interval),
+      "param_mapping": PARAM_MAPPING[model_name](hf_config_dict, maxtext_config, scan_layers),
       "shape_mapping": HF_SHAPE[model_name](hf_config_dict),
-      "hook_fn_mapping": HOOK_FNS[model_name](
-          hf_config_dict, scan_layers, inhomogeneous_layer_cycle_interval, saving_to_hf=True
-      ),
+      "hook_fn_mapping": HOOK_FNS[model_name](hf_config_dict, maxtext_config, scan_layers, saving_to_hf=True),
   }
 
 
@@ -118,7 +110,7 @@ def _check_param_map_keys(param_map_keys, maxtext_state_keys):
 
   Ensures every MaxText checkpoint key (`maxtext_state_keys`) is covered by
   the flattened parameter map. Keys in the map that are not present in the
-  checkpoint (common for multi-variant maps like gemma3 or qwen3) are skipped.
+  checkpoint (common for multi-variant maps like gemma3, qwen3, deepseek) are skipped.
 
   Tuple keys represent N-to-1 mappings (multiple MaxText keys combining into one
   target key) and are only returned if all constituent keys exist in the checkpoint.

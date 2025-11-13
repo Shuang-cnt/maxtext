@@ -41,7 +41,7 @@ import jax
 import jax.numpy as jnp
 
 
-def GEMMA3_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_interval=1):
+def GEMMA3_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """Generates a parameter mapping from MaxText to Hugging Face for Gemma3.
 
   This function creates a dictionary that maps the parameter names from a
@@ -143,7 +143,7 @@ def GEMMA3_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_in
   return mapping
 
 
-def GEMMA3_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def GEMMA3_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Hook functions for Gemma3 parameter conversion.
 
   This function provides a dictionary of transformation functions (hooks) for
@@ -298,7 +298,7 @@ def GEMMA3_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_in
   return hooks
 
 
-def GEMMA2_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_interval=1):
+def GEMMA2_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """Returns mapping between MaxText and HuggingFace Gemma2 weight paths.
 
   Args:
@@ -431,7 +431,7 @@ def GEMMA2_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_in
   return mapping
 
 
-def GEMMA2_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def GEMMA2_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Creates parameter transformation functions for Gemma2 conversion.
 
   This function generates a mapping of transformation functions that handle the
@@ -596,7 +596,7 @@ def GEMMA2_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_in
   return mapping
 
 
-def QWEN3_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_interval=1):
+def QWEN3_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """Returns mapping from MaxText to HuggingFace Qwen3 weight paths.
 
   This function generates a dictionary that maps parameter names from a MaxText
@@ -729,7 +729,7 @@ def QWEN3_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_int
   return mapping
 
 
-def QWEN3_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def QWEN3_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Creates parameter transformation functions for Qwen3.
 
   This function provides a dictionary of transformation functions (hooks) for
@@ -814,7 +814,7 @@ def QWEN3_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_int
   return mapping
 
 
-def DEEPSEEK_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_interval=1):
+def DEEPSEEK_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """Returns mapping from MaxText to HuggingFace Deepseek weight paths using f-strings."""
   # TODO(shuningjin): add unscan support, b/457820735
   if not scan_layers:
@@ -885,7 +885,7 @@ def DEEPSEEK_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_
   return mapping
 
 
-def DEEPSEEK_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def DEEPSEEK_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Creates parameter transformation functions for Deepseek using f-strings."""
   # TODO(shuningjin): support hf->orbax(scan), b/457820372
   if not saving_to_hf:
@@ -937,14 +937,16 @@ def DEEPSEEK_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_
     mapping[key] = reshape_kernel
   return mapping
 
+
 def DEEPSEEK_NNX_TO_VLLM_PARAM_HOOK_FN():
   """Creates parameter transformation functions for Deepseek."""
   return {}
 
-def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle_interval=1):
+
+def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """Returns mapping from MaxText gpt-oss to Hugging Face weight paths.
 
-  Handles the inhomogeneous scan block structure (layer_cycle_interval)
+  Handles the inhomogeneous scan block structure (inhomogeneous_layer_cycle_interval)
 
   Handles N-to-1 mapping from maxtext to huggingface
   - (GptOssMlp-wi_0, GptOssMlp-wi_1): mlp.experts.gate_up_proj
@@ -954,7 +956,8 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
   if not scan_layers:
     raise NotImplementedError("Current gpt-oss mapping only supports scan_layers=True")
 
-  n_layers = hf_config["num_hidden_layers"]
+  n_layers = config["num_hidden_layers"]  # hf config
+  layer_cycle_interval = maxtext_config.inhomogeneous_layer_cycle_interval
 
   # Base mapping for non-layer parameters (targeting standard HF keys)
   mapping = {
@@ -965,7 +968,7 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
 
   for block_idx in range(layer_cycle_interval):
     # Identify all original HF layer indices that collapse into this block
-    hf_indices = list(range(block_idx, n_layers, layer_cycle_interval))
+    hf_indices = list(range(block_idx, n_layers, maxtext_config.layer_cycle_interval))
     prefix = f"params-decoder-layers-layers_{block_idx}"
 
     # Layer Norms
@@ -1024,10 +1027,10 @@ def GPT_OSS_MAXTEXT_TO_HF_PARAM_MAPPING(hf_config, scan_layers=True, layer_cycle
   return mapping
 
 
-def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def GPT_OSS_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Transformation hooks for gpt-oss parameters.
 
-  Handles the inhomogeneous scan block structure (layer_cycle_interval)
+  Handles the inhomogeneous scan block structure (inhomogeneous_layer_cycle_interval)
 
   Handles N-to-1 mapping from maxtext to huggingface
   - (GptOssMlp-wi_0, GptOssMlp-wi_1): mlp.experts.gate_up_proj
@@ -1085,6 +1088,7 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interv
   }
 
   # Scan over blocks
+  layer_cycle_interval = maxtext_config.inhomogeneous_layer_cycle_interval
   for block_idx in range(layer_cycle_interval):
     prefix = f"params-decoder-layers-layers_{block_idx}"
     # Attention Kernels & Biases
@@ -1103,7 +1107,7 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(hf_config, scan_layers=False, layer_cycle_interv
   return hooks
 
 
-def QWEN3_OMNI_MOE_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_interval=1):
+def QWEN3_OMNI_MOE_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """Returns mapping from MaxText to HuggingFace Qwen3-Omni weight paths.
 
   This function combines mappings from different modalities (text, vision, audio, etc.)
@@ -1137,7 +1141,7 @@ def QWEN3_OMNI_MOE_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_
   return mapping
 
 
-def QWEN3_OMNI_MOE_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def QWEN3_OMNI_MOE_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Creates parameter transformation functions for Qwen3-Omni.
 
   This function provides a dictionary of transformation functions (hooks) for
@@ -1188,7 +1192,7 @@ def QWEN3_NNX_TO_VLLM_PARAM_HOOK_FN(target_shape=None):
   return {}
 
 
-def LLAMA31_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_interval=1):
+def LLAMA31_MAXTEXT_TO_HF_PARAM_MAPPING(config, maxtext_config, scan_layers=False):
   """
   Returns a dictionary mapping from MaxText parameter names to
   HuggingFace LLaMA3.1 parameter names.
@@ -1266,7 +1270,7 @@ def LLAMA31_MAXTEXT_TO_HF_PARAM_MAPPING(config, scan_layers=False, layer_cycle_i
   return mapping
 
 
-def LLAMA31_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, scan_layers=False, layer_cycle_interval=1, saving_to_hf=False):
+def LLAMA31_MAXTEXT_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, saving_to_hf=False):
   """Creates parameter transformation functions for converting between MaxText and
   HuggingFace formats.
 
