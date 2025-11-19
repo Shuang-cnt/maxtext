@@ -1037,8 +1037,8 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, savin
   - (GptOssMlp-wi_0_bias, GptOssMlp-wi_1_bias): mlp.experts.gate_up_proj_bias
   """
   # TODO(shuningjin): support hf->orbax(scan), b/459541579
-  if not saving_to_hf:
-    raise NotImplementedError("Currently gpt-oss only supports saving_to_hf=True.")
+  # if not saving_to_hf:
+  #   raise NotImplementedError("Currently gpt-oss only supports saving_to_hf=True.")
   # TODO(shuningjin): add unscan support, b/459541579
   if not scan_layers:
     raise NotImplementedError("Currently gpt-oss only supports scan_layers=True.")
@@ -1081,7 +1081,10 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, savin
     else:
       # wi_0_1 -> (wi_0, wi_1)
       # TODO(shuningjin): support hf->orbax(scan), b/459541579
-      raise NotImplementedError
+      # NOTE: array order must be same as key order, stack at axis 0
+      wi_0 = wi_0_1[..., ::2]
+      wi_1 = wi_0_1[..., 1::2]
+      return np.stack([wi_0, wi_1], axis=0)
 
   hooks = {
       "params-decoder-logits_dense-kernel": transpose,
