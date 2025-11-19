@@ -83,9 +83,7 @@ from MaxText.inference_utils import str2bool
 from MaxText.layers import models, quantizations
 from MaxText.checkpointing import save_checkpoint
 from MaxText.utils.ckpt_conversion.utils.param_mapping import HOOK_FNS, PARAM_MAPPING
-from MaxText.utils.ckpt_conversion.utils.utils import apply_hook_fns, HF_IDS
-# TODO(shuningjin): move this to MaxText.utils.ckpt_conversion.utils.utils
-from MaxText.utils.ckpt_conversion.to_huggingface import _check_param_map_keys
+from MaxText.utils.ckpt_conversion.utils.utils import check_param_map_keys, apply_hook_fns, HF_IDS
 
 jax.config.update("jax_platform_name", "cpu")
 
@@ -349,7 +347,8 @@ def _build_single_axis_stacked_tensor(
   # If the number of items to stack equals the number of layers, it's a standard
   # scanned layer, and we use the configured param_scan_axis. Otherwise, it's
   # an unscanned MoE layer, and we stack along the expert axis (0).
-  # TODO(shuningjin)
+
+  # TODO(shuningjin): this is heuristic is not working
   axis_to_stack = config.param_scan_axis if len(hf_source_keys) == config.base_num_decoder_layers else 0
   axis_to_stack = config.param_scan_axis
 
@@ -505,16 +504,8 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
   del abstract_params_flat
 
   # preprocess key
-  filtered_map_keys = _check_param_map_keys(param_map_mt_to_hf.keys(), maxtext_abstract_dict.keys())
+  filtered_map_keys = check_param_map_keys(param_map_mt_to_hf.keys(), maxtext_abstract_dict.keys())
   print(filtered_map_keys)
-  # sys.exit()
-
-  # for path_tuple, abstract_leaf_value in MemoryMonitorTqdm(
-  #     abstract_params_flat, desc="Transforming weights", unit="param", leave=True, dynamic_ncols=True
-  # ):
-  #   key_parts = [k.key for k in path_tuple if hasattr(k, "key")]
-  #   mt_param_key = "params-" + "-".join(key_parts)
-  #   mt_target_shape_final = abstract_leaf_value.shape
 
   for mt_param_key in MemoryMonitorTqdm(
       filtered_map_keys, desc="Transforming weights", unit="param", leave=True, dynamic_ncols=True
@@ -525,12 +516,10 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
       raise ValueError(f"MaxText parameter {mt_param_key} not found in mapping.")
     hook_fn = hook_fn_map_mt.get(mt_param_key)
 
-    # TODO(shuningjin): apply_hook_fns, handle target shape is list, return order should match idx
     if not isinstance(mt_param_key, tuple):
       idx, mt_target_shape_final = maxtext_abstract_dict[mt_param_key]
     else:
-      idx = []
-      mt_target_shape_final = []
+      idx, mt_target_shape_final = [], []
       for subkey in mt_param_key:
         sub_idx, sub_mt_target_shape_final = maxtext_abstract_dict[subkey]
         idx.append(sub_idx)
@@ -574,17 +563,12 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
       # NumPy array and append it to our list of weights.
       final_mt_tensor_numpy = load_fn()
 
-      # TODO(shuningjin)
-      # if final_mt_tensor_numpy.shape != mt_target_shape_final:
-      #   raise ValueError(
-      #       f"Shape mismatch for {mt_param_key}: Expected {mt_target_shape_final}, got {final_mt_tensor_numpy.shape}"
-      #   )
-
     if not isinstance(mt_param_key, tuple):
+      if final_mt_tensor_numpy.shape != mt_target_shape_final:
+        raise ValueError(
+            f"Shape mismatch for {mt_param_key}: Expected {mt_target_shape_final}, got {final_mt_tensor_numpy.shape}"
+        )
       final_mt_weights[idx] = final_mt_tensor_numpy
-      assert (
-          final_mt_weights[idx].shape == mt_target_shape_final
-      ), f"expect {mt_target_shape_final}, got {final_mt_weights[idx].shape}"
     else:
       # TODO(shuningjin): lazy load
       assert not use_lazy_load
