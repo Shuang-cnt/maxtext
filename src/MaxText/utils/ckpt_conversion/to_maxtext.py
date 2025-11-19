@@ -349,7 +349,9 @@ def _build_single_axis_stacked_tensor(
   # If the number of items to stack equals the number of layers, it's a standard
   # scanned layer, and we use the configured param_scan_axis. Otherwise, it's
   # an unscanned MoE layer, and we stack along the expert axis (0).
+  # TODO(shuningjin)
   axis_to_stack = config.param_scan_axis if len(hf_source_keys) == config.base_num_decoder_layers else 0
+  axis_to_stack = config.param_scan_axis
 
   # The hook function needs the shape of an individual slice, not the full stacked tensor.
   # We calculate it by removing the stacking dimension from the final target shape.
@@ -504,6 +506,8 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
 
   # preprocess key
   filtered_map_keys = _check_param_map_keys(param_map_mt_to_hf.keys(), maxtext_abstract_dict.keys())
+  print(filtered_map_keys)
+  # sys.exit()
 
   # for path_tuple, abstract_leaf_value in MemoryMonitorTqdm(
   #     abstract_params_flat, desc="Transforming weights", unit="param", leave=True, dynamic_ncols=True
@@ -515,13 +519,14 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
   for mt_param_key in MemoryMonitorTqdm(
       filtered_map_keys, desc="Transforming weights", unit="param", leave=True, dynamic_ncols=True
   ):
+    print(mt_param_key)
     hf_source_keys_or_key = param_map_mt_to_hf.get(mt_param_key)
     if hf_source_keys_or_key is None:
       raise ValueError(f"MaxText parameter {mt_param_key} not found in mapping.")
     hook_fn = hook_fn_map_mt.get(mt_param_key)
 
     # TODO(shuningjin): apply_hook_fns, handle target shape is list, return order should match idx
-    if mt_param_key is not tuple:
+    if not isinstance(mt_param_key, tuple):
       idx, mt_target_shape_final = maxtext_abstract_dict[mt_param_key]
     else:
       idx = []
@@ -568,19 +573,29 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
       # In eager mode, we execute the function immediately to get the
       # NumPy array and append it to our list of weights.
       final_mt_tensor_numpy = load_fn()
-      if final_mt_tensor_numpy.shape != mt_target_shape_final:
-        raise ValueError(
-            f"Shape mismatch for {mt_param_key}: Expected {mt_target_shape_final}, got {final_mt_tensor_numpy.shape}"
-        )
 
-    if mt_param_key is not tuple:
+      # TODO(shuningjin)
+      # if final_mt_tensor_numpy.shape != mt_target_shape_final:
+      #   raise ValueError(
+      #       f"Shape mismatch for {mt_param_key}: Expected {mt_target_shape_final}, got {final_mt_tensor_numpy.shape}"
+      #   )
+
+    if not isinstance(mt_param_key, tuple):
       final_mt_weights[idx] = final_mt_tensor_numpy
+      assert (
+          final_mt_weights[idx].shape == mt_target_shape_final
+      ), f"expect {mt_target_shape_final}, got {final_mt_weights[idx].shape}"
     else:
+      # TODO(shuningjin): lazy load
       assert not use_lazy_load
-      for sub_idx in idx:
-        final_mt_weights[sub_idx] = final_mt_tensor_numpy[sub_idx]
+      for i, sub_idx in enumerate(idx):
+        final_mt_weights[sub_idx] = final_mt_tensor_numpy[..., i]
+        assert (
+            final_mt_weights[sub_idx].shape == mt_target_shape_final[i]
+        ), f"expect {mt_target_shape_final[i]}, got {final_mt_weights[sub_idx].shape}"
 
-  del abstract_params_flat, hf_state_dict_numpy
+  # del abstract_params_flat
+  del hf_state_dict_numpy
   max_logging.log("Weight transformation preparation complete.")
   print_ram_usage("Before creating full JAX tree")
 

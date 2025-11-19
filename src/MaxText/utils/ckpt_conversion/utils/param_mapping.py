@@ -1069,7 +1069,8 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, savin
   def interleave(input_tensor, target_shape=None):
     """
     N-to-1 mapping: maxtext (wi_0, wi_1) <-> hf (wi_0_1)
-    if saving_to_hf, input_tensor is a list of tensors
+    if saving_to_hf, input_tensor is a list of two tensors, return a single tensor
+    else, input_tensor is a single tensor, return two tensors stack at index -1
     """
     if saving_to_hf:
       # (wi_0, wi_1) -> wi_0_1
@@ -1081,10 +1082,11 @@ def GPT_OSS_TO_HF_PARAM_HOOK_FN(config, maxtext_config, scan_layers=False, savin
     else:
       # wi_0_1 -> (wi_0, wi_1)
       # TODO(shuningjin): support hf->orbax(scan), b/459541579
-      # NOTE: array order must be same as key order, stack at axis 0
+      # NOTE: array order must be same as key order, stack at axis -1
+      wi_0_1 = input_tensor
       wi_0 = wi_0_1[..., ::2]
       wi_1 = wi_0_1[..., 1::2]
-      return np.stack([wi_0, wi_1], axis=0)
+      return np.stack([wi_0, wi_1], axis=-1)
 
   hooks = {
       "params-decoder-logits_dense-kernel": transpose,
