@@ -396,10 +396,11 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
   if model_name_original not in HF_IDS:
     raise ValueError(f"Unsupported model name: {model_name_original}. Supported models are: {list(HF_IDS.keys())}")
 
-  if not test_args.local_path:
+  if not test_args.hf_model_path:
     model_id = HF_IDS[model_name_original]
   else:
-    model_id = test_args.local_path
+    model_id = test_args.hf_model_path
+
   max_utils.print_system_information()
   if not config.base_output_directory:
     output_directory = f"tmp/{config.run_name}"
@@ -578,7 +579,6 @@ def main(args: Sequence[str], test_args: Sequence[str]) -> None:
             final_mt_weights[sub_idx].shape == mt_target_shape_final[i]
         ), f"expect {mt_target_shape_final[i]}, got {final_mt_weights[sub_idx].shape}"
 
-  # del abstract_params_flat
   del hf_state_dict_numpy
   max_logging.log("Weight transformation preparation complete.")
   print_ram_usage("Before creating full JAX tree")
@@ -623,16 +623,13 @@ if __name__ == "__main__":
       default=False,
       help="Whether to use lazy loading of HF tensors.",
   )
+  # if not specified, default to MaxText.utils.ckpt_conversion.utils.utils.HF_IDS[model_name]
   parser.add_argument(
-      "--local_path",
-      type=str,
-      required=False,
-      default="",
-      help="local path for hf model",
+      "--hf_model_path", type=str, required=False, default="", help="local path to hf model, or custom remote hf repo"
   )
   local_args, _ = parser.parse_known_args()
   model_args = sys.argv
-  to_remove_args = ["--lazy_load_tensors", "--local_path"]
+  to_remove_args = ["--lazy_load_tensors", "--hf_model_path"]
   for a in to_remove_args:
     model_args = [s for s in model_args if not s.startswith(a)]
   main(model_args, local_args)
