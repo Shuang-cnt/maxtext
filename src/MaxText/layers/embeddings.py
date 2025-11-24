@@ -26,7 +26,7 @@ from flax import nnx
 
 from MaxText import max_logging
 from MaxText import max_utils
-from MaxText.sharding import logical_to_mesh_axes
+from MaxText.sharding import logical_to_mesh_axes, create_sharding
 from MaxText.common_types import ShardMode, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN, Array, Config, DType
 from MaxText.layers import nnx_wrappers
 from MaxText.layers.initializers import Initializer, default_embed_init, variable_to_logically_partitioned
@@ -745,7 +745,7 @@ class YarnRotaryEmbedding(nnx.Module):
     self.mesh = mesh
     self.shard_mode = shard_mode
     self.freqs_sharding = (
-        NamedSharding(mesh, nn.logical_to_mesh_axes(("activation_batch", "activation_length_no_exp", "q_heads")))
+        create_sharding(mesh, ("activation_batch", "activation_length_no_exp", "q_heads"))
         if shard_mode == ShardMode.EXPLICIT
         else None
     )
@@ -873,7 +873,7 @@ class YarnRotaryEmbedding(nnx.Module):
     inputs_complex = first_half + 1j * second_half  # shape: [B, S, N, half_dim]
     # Apply the rotary transformation via complex multiplication.
     rotated_sharding = (
-        NamedSharding(self.mesh, nn.logical_to_mesh_axes(("activation_batch", "activation_length_no_exp", None, None)))
+        create_sharding(self.mesh, ("activation_batch", "activation_length_no_exp", None, None))
         if self.shard_mode == ShardMode.EXPLICIT
         else None
     )

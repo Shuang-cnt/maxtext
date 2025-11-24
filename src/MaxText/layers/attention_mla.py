@@ -24,7 +24,6 @@ from jax.sharding import Mesh, NamedSharding
 import jax.numpy as jnp
 
 from flax import nnx
-from flax import linen as nn
 
 from MaxText.common_types import (
     Array,
@@ -65,7 +64,7 @@ from MaxText.layers.initializers import nd_dense_init, NdInitializer, variable_t
 from MaxText.layers.linears import DenseGeneral
 from MaxText.layers.normalizations import RMSNorm
 from MaxText.layers.quantizations import AqtQuantization as Quant
-from MaxText.sharding import maybe_shard_with_logical
+from MaxText.sharding import maybe_shard_with_logical, create_sharding
 
 
 @dataclasses.dataclass(frozen=True)
@@ -314,7 +313,7 @@ class MLA(Attention):
   def _create_sharding(self, axis_names):
     """Creates NamedSharding if shard_mode is EXPLICIT, otherwise None."""
     if self.config.shard_mode == ShardMode.EXPLICIT:
-      return NamedSharding(self.mesh, nn.logical_to_mesh_axes(axis_names))
+      return create_sharding(self.mesh, axis_names)
     return None
 
   def _get_logical_names(self, model_mode):

@@ -51,6 +51,8 @@ def maybe_shard_with_logical(inputs, logical_axes, mesh, shard_mode):
   """
   A wrapper of maybe_shard_with_name when logical axes are inputs
   """
+  if inputs is None:
+    return None
   named_sharding = create_sharding(mesh, logical_axes)
   return maybe_shard_with_name(inputs, named_sharding, shard_mode)
 
@@ -76,6 +78,8 @@ def remove_size_one_mesh_axis(spec, mesh) -> P:
 
 def logical_to_mesh_axes(logical_names: tuple[str, ...], mesh: Mesh):
   """Remove size one mesh axes given logical names."""
+  if logical_names is None:
+    return None
   tensor_spec = nn.logical_to_mesh_axes(logical_names)
   return remove_size_one_mesh_axis(tensor_spec, mesh)
 

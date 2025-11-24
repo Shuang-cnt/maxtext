@@ -33,7 +33,7 @@ from MaxText import common_types as ctypes
 from MaxText import max_logging
 from MaxText import max_utils
 from MaxText.common_types import ShardMode
-from MaxText.sharding import maybe_shard_with_logical
+from MaxText.sharding import maybe_shard_with_logical, create_sharding
 from MaxText.kernels import megablox as mblx
 from MaxText.sharding import logical_to_mesh_axes
 from MaxText.layers import attentions, linears, nnx_wrappers, quantizations
@@ -264,9 +264,7 @@ class GateLogit(nnx.Module):
 
     # [B, S, E] -> [B, S, num_exp]
     output_sharding = (
-        NamedSharding(
-            self.mesh, nn.logical_to_mesh_axes(("activation_batch_no_exp", "activation_length_no_exp", "activation_exp"))
-        )
+        create_sharding(self.mesh, ("activation_batch_no_exp", "activation_length_no_exp", "activation_exp"))
         if self.shard_mode == ShardMode.EXPLICIT
         else None
     )
@@ -505,7 +503,7 @@ class RoutedMoE(nnx.Module):
   def _create_sharding(self, axis_names):
     """Creates NamedSharding if shard_mode is EXPLICIT, otherwise None."""
     if self.config.shard_mode == ShardMode.EXPLICIT:
-      return NamedSharding(self.mesh, nn.logical_to_mesh_axes(axis_names))
+      return create_sharding(self.mesh, axis_names)
     return None
 
   def setup_sharding(self, model_mode):
@@ -1015,15 +1013,15 @@ class RoutedMoE(nnx.Module):
         output = output[: hs_shape[0]]
       return output
 
-    input_partition_pspec = nn.logical_to_mesh_axes(self.logical_names.inputs)
-    w0_bias_pspec = nn.logical_to_mesh_axes(self.logical_names.wi_bias)
-    w1_bias_pspec = nn.logical_to_mesh_axes(self.logical_names.wi_bias)
-    wo_bias_pspec = nn.logical_to_mesh_axes(self.logical_names.wo_bias)
-    gate_logits_pspec = nn.logical_to_mesh_axes(self.logical_names.gate)
-    pre_bias_logits_pspec = nn.logical_to_mesh_axes(self.logical_names.pre_bias)
-    w0_pspec = nn.logical_to_mesh_axes(self.logical_names.wi_kernel_sp)
-    w1_pspec = nn.logical_to_mesh_axes(self.logical_names.wi_kernel_sp)
-    wo_pspec = nn.logical_to_mesh_axes(self.logical_names.wo_kernel_sp)
+    input_partition_pspec = logical_to_mesh_axes(self.logical_names.inputs, self.mesh)
+    w0_bias_pspec = logical_to_mesh_axes(self.logical_names.wi_bias, self.mesh)
+    w1_bias_pspec = logical_to_mesh_axes(self.logical_names.wi_bias, self.mesh)
+    wo_bias_pspec = logical_to_mesh_axes(self.logical_names.wo_bias, self.mesh)
+    gate_logits_pspec = logical_to_mesh_axes(self.logical_names.gate, self.mesh)
+    pre_bias_logits_pspec = logical_to_mesh_axes(self.logical_names.pre_bias, self.mesh)
+    w0_pspec = logical_to_mesh_axes(self.logical_names.wi_kernel_sp, self.mesh)
+    w1_pspec = logical_to_mesh_axes(self.logical_names.wi_kernel_sp, self.mesh)
+    wo_pspec = logical_to_mesh_axes(self.logical_names.wo_kernel_sp, self.mesh)
 
     if isinstance(w0_kernel, aqt.QTensor):
       w0_pspec = aqt.partition_spec(w0_pspec, (1,), w0_kernel.dtype, use_bias=False)
@@ -1047,8 +1045,8 @@ class RoutedMoE(nnx.Module):
             wo_bias_pspec,
             None,
         ),
-        out_specs=(nn.logical_to_mesh_axes(self.logical_names.out)),
-        check_vma=False,
+        out_specs=(logical_to_mesh_axes(self.logical_names.out, self.mesh)),
+        check_vma=True,
     )
     def wrapper(x, logits, pre_bias_logits, w0, w1, wo, w0_bias, w1_bias, wo_bias, rngs):
       batch_size, sequence_length, _ = x.shape

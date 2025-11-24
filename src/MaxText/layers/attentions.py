@@ -474,7 +474,7 @@ class Attention(nnx.Module):
   def _create_sharding(self, axis_names):
     """Creates NamedSharding if shard_mode is EXPLICIT, otherwise None."""
     if self.config.shard_mode == ShardMode.EXPLICIT:
-      return NamedSharding(self.mesh, nn.logical_to_mesh_axes(axis_names))
+      return create_sharding(self.mesh, axis_names)
     return None
 
   def _get_logical_names(self, model_mode):
