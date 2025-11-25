@@ -20,6 +20,7 @@ import sys
 import unittest
 
 import pytest
+from types import SimpleNamespace
 
 import jax
 from jax.sharding import Mesh
@@ -34,6 +35,7 @@ from MaxText import pyconfig
 from MaxText.common_types import MODEL_MODE_TRAIN
 from MaxText.globals import MAXTEXT_PKG_DIR, MAXTEXT_ASSETS_ROOT
 from MaxText.layers import pipeline
+from MaxText.layers import pipeline_nnx
 from MaxText.layers import simple_layer
 from MaxText.train import main as train_main
 from MaxText.layers import deepseek
@@ -54,6 +56,80 @@ def assert_same_output_and_grad(f1, f2, *inputs):
 
   assert jax.numpy.allclose(f1_value, f2_value, rtol=1e-2, equal_nan=False)
   assert jax.numpy.allclose(f1_grad, f2_grad, rtol=1e-1, equal_nan=False)
+
+
+# Mock Layer (A simple Dense layer)
+class MockDecoderLayer(nnx.Module):
+
+  def __init__(self, config, rngs):
+    self.linear = nnx.Linear(config.emb_dim, config.emb_dim, rngs=rngs)
+
+  def __call__(self, x):
+    return self.linear(x)
+
+
+class PipelineNNXTest(unittest.TestCase):
+
+  def test_pipeline_init_shapes(self):
+    rngs = nnx.Rngs(0)
+    mock_config = SimpleNamespace(
+        ici_pipeline_parallelism=2,
+        dcn_pipeline_parallelism=1,
+        pipeline_delay_activation_forwarding=False,
+        micro_batch_size_to_train_on=4,
+        num_pipeline_microbatches=4,
+        expert_shard_attention_option="standard",
+        max_target_length=8,
+        emb_dim=4,
+    )
+    _pipeline = pipeline_nnx.Pipeline(mock_config, MockDecoderLayer, mesh=None, rngs=rngs)
+
+    # We expect 2 stages based on config
+    assert _pipeline.num_stages == 2
+
+    # Check weights of the sub-layer
+    # In NNX, the vmap puts the 'stage' dimension at index 0 of the kernel
+    # Shape should be [stages, in_features, out_features] -> [2, 4, 4]
+    kernel_shape = _pipeline.layers.linear.kernel.value.shape
+    assert kernel_shape == (2, 4, 4)
+    print(f"Success! Kernel shape is {kernel_shape}")
+
+  def test_pipeline_execution(self):
+    # Setup
+    mock_config = SimpleNamespace(
+        ici_pipeline_parallelism=2,
+        dcn_pipeline_parallelism=1,
+        pipeline_delay_activation_forwarding=False,
+        micro_batch_size_to_train_on=4,
+        num_pipeline_microbatches=4,
+        expert_shard_attention_option="standard",
+        max_target_length=8,
+        emb_dim=4,
+    )
+    config = mock_config  # Reuse from Phase 1
+    config.logical_axis_rules = []  # No sharding for local test
+
+    rngs = nnx.Rngs(0)
+    _pipeline = pipeline_nnx.Pipeline(config, MockDecoderLayer, mesh=None, rngs=rngs)
+
+    # Input: [Batch=4, Seq=8, Emb=4]
+    # Microbatches = 4, so Micro_Size = 1
+    input_data = jax.random.normal(jax.random.key(0), (4, 8, 4))
+
+    # Run
+    output = _pipeline(input_data)
+
+    # Verify Shape
+    assert output.shape == input_data.shape
+
+    # Verify Data Flow
+    # Since our MockLayer is just a Linear layer, the pipeline should
+    # effectively behave like a deep linear network.
+    # If the buffer logic was broken (e.g. data didn't move between stages),
+    # the output would likely be all zeros because the last stage never received input.
+    assert not jnp.all(output == 0)
+
+    print("Pipeline execution successful! Output shape matches input.")
 
 
 class PipelineParallelismTest(unittest.TestCase):
