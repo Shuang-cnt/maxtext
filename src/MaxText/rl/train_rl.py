@@ -347,9 +347,9 @@ def rl_train(trainer_config, sampler_config, trainer_devices, sampler_devices):
           eval_every_n_steps=trainer_config.eval_interval,
           max_steps=max_train_steps,
           # Micro batching
-          mini_batch_size=trainer_config.batch_size,
-          train_micro_batch_size=micro_batch_size,
-          rollout_micro_batch_size=micro_batch_size,
+          mini_batch_size=int(trainer_config.batch_size),
+          train_micro_batch_size=int(micro_batch_size),
+          rollout_micro_batch_size=int(micro_batch_size),
           # Metrics logging
           metrics_logging_options=metrics_logging_options,
           # Profiling
@@ -369,6 +369,8 @@ def rl_train(trainer_config, sampler_config, trainer_devices, sampler_devices):
           rollout_vllm_hbm_utilization=trainer_config.hbm_utilization_vllm,
           rollout_vllm_tpu_backend_type="jax",
           rollout_vllm_swap_space_size_gb=trainer_config.swap_space_vllm_gb,
+          tensor_parallel_size=8,
+          data_parallel_size=2,
       ),
   )
   grpo_config = GrpoConfig(

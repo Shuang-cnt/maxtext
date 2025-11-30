@@ -27,23 +27,31 @@ RUN pip install keyring keyrings.google-artifactregistry-auth
 
 RUN pip install numba==0.61.2
 
-COPY tunix /tunix
-RUN pip uninstall -y google-tunix
-RUN pip install -e /tunix --no-cache-dir
+RUN pip install vllm-tpu
 
+# 1. TUNIX
+# Clone directly into /tunix instead of COPYing local files
+RUN git clone -b make-moe-work https://github.com/abhinavclemson/tunix.git
 
-COPY vllm /vllm
-RUN VLLM_TARGET_DEVICE="tpu" pip install -e /vllm --no-cache-dir
+# 2. TPU-INFERENCE
+# Clone directly into /tpu-inference
+RUN git clone https://github.com/vllm-project/tpu-inference.git /tpu-inference
+# Note: The repo name is 'tpu-inference' (dash), but python package might be 'tpu_inference'.
+# pip install handles this mapping automatically.
 
+# 3. vLLM
+# Clone directly into /vllm
+RUN git clone https://github.com/vllm-project/vllm.git /vllm
+# Set the TPU target and install
 
-COPY tpu-inference /tpu-inference
-RUN pip install -e /tpu-inference --no-cache-dir
+# --- REPLACEMENT END ---
 
 RUN pip install --no-deps qwix==0.1.4
+
+RUN pip install google-metrax numpy==2.2
 
 RUN if [ "$MODE" = "post-training-experimental" ]; then \
     echo "MODE=post-training-experimental: Re-installing JAX/libtpu"; \
     pip uninstall -y jax jaxlib libtpu && \
-    pip install --pre -U jax jaxlib -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/ && \
-    pip install -U --pre libtpu -f https://storage.googleapis.com/jax-releases/libtpu_releases.html; \
+    pip install --pre jax==0.8.0.dev20251013 jaxlib==0.8.0.dev20251013 libtpu==0.0.25.dev20251012+nightly  -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/ -f https://storage.googleapis.com/jax-releases/libtpu_releases.html; \
     fi
