@@ -1146,10 +1146,7 @@ class RoutedMoE(nnx.Module):
           self.config.wo_tile_drhs_embed_dim,
           self.config.wo_tile_drhs_mlp_dim,
       )
-      if self.config.use_qwix_quantization:
-        wi_tile_size = (128, 7168, 2048, 256, 2048, 3584, 256, 1792, 2048)
-        wo_tile_size = (256, 2048, 3584, 256, 7168, 1024, 256, 2048, 1792)
-      layer_w0 = gmm_fn(x, w0, tiling=wi_tile_size)
+      layer_w0 = gmm_fn(x, w0, tiling=wi_tile_size, weight_gather_axes=wi_gather_axes)
       if self.get_tensor_transpose_parallelism_size() > 1:
         layer_w0 = jax.lax.psum(layer_w0, "tensor_transpose")
       if self.config.mlp_bias:
